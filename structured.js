@@ -59,96 +59,135 @@
      * return true if n2 < n1 (according to relatively arbitrary criteria)
      */
     function shouldSwap(n1, n2) {
-	if (n1.type < n2.type) { //Sort by node type if different
-	    return false;
-	} else if (n1.type > n2.type) {
-	    return true;
-	} else if (n1.type === "Literal") { //Sort by value if they're literals
-	    return n1.raw > n2.raw
-	} else { //Otherwise, loop through the properties until a difference is found and sort by that
-	    for (var k in n1) {
-		if (n1[k].hasOwnProperty("type") && n1[k] !== n2[k]) {
-		    return shouldSwap(n1[k], n2[k]);
-		}
-	    }
-	}
+        if (n1.type < n2.type) { //Sort by node type if different
+            return false;
+        } else if (n1.type > n2.type) {
+            return true;
+        } else if (n1.type === "Literal") { //Sort by value if they're literals
+            return n1.raw > n2.raw
+        } else { //Otherwise, loop through the properties until a difference is found and sort by that
+            for (var k in n1) {
+                if (n1[k].hasOwnProperty("type") && n1[k] !== n2[k]) {
+                    return shouldSwap(n1[k], n2[k]);
+                }
+            }
+        }
     }
     function standardizeTree(tree) {
-	if (!tree) {return tree;}
+        if (!tree) {return tree;}
         var r = deepClone(tree);
         switch (tree.type) {
             case "BinaryExpression":
                 if (_.contains(["*", "+", "===", "!==", "==", "!=", "&", "|", "^"], tree.operator)) {
-		    if (shouldSwap(tree.left, tree.right)) {
-			r.left = standardizeTree(tree.right);
-			r.right = standardizeTree(tree.left);
-		    }
-		} else if (tree.operator[0] === ">") {
-		    r.operator = "<" + tree.operator.slice(1);
-		    r.left = standardizeTree(tree.right);
-		    r.right = standardizeTree(tree.left);
-		} break;
-	    case "LogicalExpression":
-	        if (_.contains(["&&", "||"], tree.operator) &&
-		    shouldSwap(tree.left, tree.right)) {
-		    r.left = standardizeTree(tree.right);
-		    r.right = standardizeTree(tree.left);
-		} break;
-	    case "AssignmentExpression":
-	        if (_.contains(["+=", "-=", "*=", "/=", "%=", "<<=", ">>=", ">>>=", "&=", "^=", "|="], tree.operator)) {
-		    var l = standardizeTree(tree.left);
-		    r = {type: "AssignmentExpression",
-			 operator: "=",
-			 left: l,
-			 right: {type: "BinaryExpression",
-				 operator: tree.operator.slice(0,-1),
-				 left: l,
-				 right: standardizeTree(tree.right)}};
-		} break;
-	    case "UpdateExpression":
-	        if (_.contains(["++", "--"], tree.operator)) {
-		    var l = standardizeTree(tree.argument);
-		    r = {type: "AssignmentExpression",
-			 operator: "=",
-			 left: l,
-			 right: {type: "BinaryExpression",
-				 operator: tree.operator[0],
-				 left: l,
-				 right: {type: "Literal",
-					 value: 1,
-					 raw: "1"}}};
-		} break;
-	    case "VariableDeclaration":
-	        if (tree.kind === "var") {
-		    r = [deepClone(tree)];
-		    for (var i in tree.declarations) {
-			if (tree.declarations[i].type === "VariableDeclarator" &&
-			    tree.declarations[i].init !== null) {
-			    r.push({type: "ExpressionStatement",
-				    expression: {type: "AssignmentExpression",
-						 operator: "=",
-						 left: tree.declarations[i].id,
-						 right: standardizeTree(tree.declarations[i].init)}});
-			    r[0].declarations[i].init = null;
-			}
-		    }
-		} break;
-	    default:
-	        for (var key in tree) {
-		    if (!tree.hasOwnProperty(key) || !_.isObject(tree[key])) {
-			continue;
-		    }
-		    if (_.isArray(tree[key])) {
-			var ar = [];
-			for (var i in tree[key]) {
-			    ar = ar.concat(standardizeTree(tree[key][i]));
-			}
-			r[key] = ar;
-		    } else {
-			r[key] = standardizeTree(tree[key]);
-		    }
-		}
-        }
+                    if (shouldSwap(tree.left, tree.right)) {
+                        r.left = standardizeTree(tree.right);
+                        r.right = standardizeTree(tree.left);
+                    }
+                } else if (tree.operator[0] === ">") {
+                    r.operator = "<" + tree.operator.slice(1);
+                    r.left = standardizeTree(tree.right);
+                    r.right = standardizeTree(tree.left);
+                }
+                if (r.left.type === "Literal" && r.right.type === "Literal") {
+                    var v1 = r.left.value;
+                    var v2 = r.right.value;
+                    var v = null;
+                    switch (r.operator) {
+                        case "*": v = (v1 * v2); break;
+                        case "+": v = (v1 + v2); break;
+                        case "===": v = (v1 === v2); break;
+                        case "!==": v = (v1 !== v2); break;
+                        case "==": v = (v1 == v2); break;
+                        case "!=": v = (v1 != v2); break;
+                        case "&": v = (v1 & v2); break;
+                        case "|": v = (v1 | v2); break;
+                        case "^": v = (v1 ^ v2); break;
+                        case "<": v = (v1 < v2); break;
+                        case "<=": v = (v1 <= v2); break;
+                        case ">": v = (v1 > v2); break;
+                        case ">=": v = (v1 >= v2); break;
+                        default: null;
+                    }
+                    r = {type: "Literal",
+                         value: v,
+                         raw: String(v)};
+                } break;
+            case "UnaryExpression":
+                if (r.argument.type === "Literal") {
+                    var v = r.argument.value;
+                    var change = true;
+                    if (r.operator === "+") {
+                        v = +v;
+                    } else if (r.operator === "-") {
+                        v = -v;
+                    } else { //Are there other unary operators?
+                        change = false; //If not, this line is unnecessary
+                    }
+                    if (change) {
+                        r = {type: "Literal",
+                             value: v,
+                             raw: String(v)};
+                    }
+                } break;
+            case "LogicalExpression":
+                if (_.contains(["&&", "||"], tree.operator) && shouldSwap(tree.left, tree.right)) {
+                    r.left = standardizeTree(tree.right);
+                    r.right = standardizeTree(tree.left);
+                } break;
+            case "AssignmentExpression":
+                if (_.contains(["+=", "-=", "*=", "/=", "%=", "<<=", ">>=", ">>>=", "&=", "^=", "|="], tree.operator)) {
+                    var l = standardizeTree(tree.left);
+                    r = {type: "AssignmentExpression",
+                         operator: "=",
+                         left: l,
+                         right: {type: "BinaryExpression",
+                                 operator: tree.operator.slice(0,-1),
+                                 left: l,
+                                 right: standardizeTree(tree.right)}};
+                } break;
+            case "UpdateExpression":
+                if (_.contains(["++", "--"], tree.operator)) {
+                    var l = standardizeTree(tree.argument);
+                    r = {type: "AssignmentExpression",
+                         operator: "=",
+                         left: l,
+                         right: {type: "BinaryExpression",
+                                 operator: tree.operator[0],
+                                 left: l,
+                                 right: {type: "Literal",
+                                         value: 1,
+                                         raw: "1"}}};
+                 } break;
+            case "VariableDeclaration":
+                if (tree.kind === "var") {
+                    r = [r];
+                    for (var i in tree.declarations) {
+                        if (tree.declarations[i].type === "VariableDeclarator" &&
+                            tree.declarations[i].init !== null) {
+                            r.push({type: "ExpressionStatement",
+                                    expression: {type: "AssignmentExpression",
+                                    operator: "=",
+                                    left: tree.declarations[i].id,
+                                    right: standardizeTree(tree.declarations[i].init)}});
+                            r[0].declarations[i].init = null;
+                        }
+                    }
+                } break;
+            default:
+                for (var key in tree) {
+                    if (tree.hasOwnProperty(key) && _.isObject(tree[key])) {
+                        if (_.isArray(tree[key])) {
+                            var ar = [];
+                            for (var i in tree[key]) {
+                            ar = ar.concat(standardizeTree(tree[key][i]));
+                            }
+                            r[key] = ar;
+                        } else {
+                            r[key] = standardizeTree(tree[key]);
+                        }
+                    }
+                }
+            }
         return r;
     }
 
@@ -249,7 +288,6 @@
         cachedCode = code;
         cachedCodeTree = codeTree;
 
-        foldConstants(codeTree);
         var toFind = structure.body || structure;
         var peers = [];
         if (_.isArray(structure.body)) {
@@ -261,7 +299,7 @@
             _: [],
             vars: {}
         };
-	codeTree = standardizeTree(codeTree);
+        codeTree = standardizeTree(codeTree);
         if (wildcardVars.order.length === 0 || options.single) {
             // With no vars to match, our normal greedy approach works great.
             result = checkMatchTree(codeTree, toFind, peers, wildcardVars, matchResult, options);
@@ -451,44 +489,8 @@
      */
     function parseStructureWithVars(structure, wVars) {
         var tree = standardizeTree(parseStructure(structure));
-        foldConstants(tree);
         simplifyTree(tree, wVars);
         return tree;
-    }
-
-    /*
-     * Constant folds the syntax tree
-     */
-    function foldConstants(tree) {
-        for (var key in tree) {
-            if (!tree.hasOwnProperty(key)) {
-                continue; // Inherited property
-            }
-
-            var ast = tree[key];
-            if (_.isObject(ast)) {
-                foldConstants(ast);
-
-                /*
-                 * Currently, we only fold + and - applied to a number literal.
-                 * This is easy to extend, but it means we lose the ability to match
-                 * potentially useful expressions like 5 + 5 with a pattern like _ + _.
-                 */
-                if (ast.type == esprima.Syntax.UnaryExpression) {
-                    var argument = ast.argument;
-                    if (argument.type === esprima.Syntax.Literal &&
-                        _.isNumber(argument.value)) {
-                        if (ast.operator === "-") {
-                            argument.value = -argument.value;
-                            tree[key] = argument;
-                        } else if (ast.operator === "+") {
-                            argument.value = +argument.value;
-                            tree[key] = argument;
-                        }
-                    }
-                }
-            }
-        }
     }
 
     /*
