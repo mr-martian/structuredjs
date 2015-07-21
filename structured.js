@@ -76,19 +76,44 @@
     function standardizeTree(tree) {
         if (!tree) {return tree;}
         var r = deepClone(tree);
+        var le = null;
+        var ri = null;
+        var arg = null;
+        for (var key in tree) { //Standardize everything upfront to be sure nothing gets missed.
+            if (tree.hasOwnProperty(key) && _.isObject(tree[key])) {
+                if (_.isArray(tree[key])) {
+                    var ar = [];
+                    for (var i in tree[key]) {
+                        ar = ar.concat(standardizeTree(tree[key][i]));
+                    }
+                    r[key] = ar;
+                } else {
+                    r[key] = standardizeTree(tree[key]);
+                }
+                if (key === "left") { //Just so they don't have to be defined in nearly every case section
+                    le = r[key];
+                } else if (key === "right") {
+                    ri = r[key];
+                } else if (key === "argument") {
+                    arg = r[key];
+                } else {
+                    null;
+                }
+            }
+        }
         switch (tree.type) {
             case "BinaryExpression":
                 if (_.contains(["*", "+", "===", "!==", "==", "!=", "&", "|", "^"], tree.operator)) {
-                    if (shouldSwap(tree.left, tree.right)) {
-                        r.left = standardizeTree(tree.right);
-                        r.right = standardizeTree(tree.left);
+                    if (shouldSwap(r.left, r.right)) {
+                        r.left = ri;
+                        r.right = le;
                     }
                 } else if (tree.operator[0] === ">") {
                     r.operator = "<" + tree.operator.slice(1);
-                    r.left = standardizeTree(tree.right);
-                    r.right = standardizeTree(tree.left);
+                    r.left = ri;
+                    r.right = le;
                 }
-                if (r.left.type === "Literal" && r.right.type === "Literal") {
+                /*if (r.left.type === "Literal" && r.right.type === "Literal") {
                     var v1 = r.left.value;
                     var v2 = r.right.value;
                     var v = null;
@@ -111,7 +136,7 @@
                     r = {type: "Literal",
                          value: v,
                          raw: String(v)};
-                } break;
+                }*/ break;
             case "UnaryExpression":
                 if (r.argument.type === "Literal") {
                     var v = r.argument.value;
@@ -131,62 +156,48 @@
                 } break;
             case "LogicalExpression":
                 if (_.contains(["&&", "||"], tree.operator) && shouldSwap(tree.left, tree.right)) {
-                    r.left = standardizeTree(tree.right);
-                    r.right = standardizeTree(tree.left);
+                    r.left = ri;
+                    r.right = le;
                 } break;
             case "AssignmentExpression":
                 if (_.contains(["+=", "-=", "*=", "/=", "%=", "<<=", ">>=", ">>>=", "&=", "^=", "|="], tree.operator)) {
-                    var l = standardizeTree(tree.left);
                     r = {type: "AssignmentExpression",
                          operator: "=",
-                         left: l,
+                         left: le,
                          right: {type: "BinaryExpression",
                                  operator: tree.operator.slice(0,-1),
-                                 left: l,
-                                 right: standardizeTree(tree.right)}};
+                                 left: le,
+                                 right: ri}};
                 } break;
             case "UpdateExpression":
                 if (_.contains(["++", "--"], tree.operator)) {
-                    var l = standardizeTree(tree.argument);
                     r = {type: "AssignmentExpression",
                          operator: "=",
-                         left: l,
+                         left: arg,
                          right: {type: "BinaryExpression",
                                  operator: tree.operator[0],
-                                 left: l,
+                                 left: arg,
                                  right: {type: "Literal",
                                          value: 1,
                                          raw: "1"}}};
                  } break;
             case "VariableDeclaration":
-                if (tree.kind === "var") {
+                if (r.kind === "var") {
                     r = [r];
-                    for (var i in tree.declarations) {
-                        if (tree.declarations[i].type === "VariableDeclarator" &&
-                            tree.declarations[i].init !== null) {
+                    for (var i in r[0].declarations) {
+                        if (r[0].declarations[i].type === "VariableDeclarator" &&
+                            r[0].declarations[i].init !== null) {
                             r.push({type: "ExpressionStatement",
                                     expression: {type: "AssignmentExpression",
-                                    operator: "=",
-                                    left: tree.declarations[i].id,
-                                    right: standardizeTree(tree.declarations[i].init)}});
+                                                 operator: "=",
+                                                 left: r[0].declarations[i].id,
+                                                 right: r[0].declarations[i].init}});
                             r[0].declarations[i].init = null;
                         }
                     }
                 } break;
             default:
-                for (var key in tree) {
-                    if (tree.hasOwnProperty(key) && _.isObject(tree[key])) {
-                        if (_.isArray(tree[key])) {
-                            var ar = [];
-                            for (var i in tree[key]) {
-                            ar = ar.concat(standardizeTree(tree[key][i]));
-                            }
-                            r[key] = ar;
-                        } else {
-                            r[key] = standardizeTree(tree[key]);
-                        }
-                    }
-                }
+                null;
             }
         return r;
     }
