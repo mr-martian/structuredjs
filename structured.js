@@ -112,31 +112,7 @@
                     r.operator = "<" + tree.operator.slice(1);
                     r.left = ri;
                     r.right = le;
-                }
-                /*if (r.left.type === "Literal" && r.right.type === "Literal") {
-                    var v1 = r.left.value;
-                    var v2 = r.right.value;
-                    var v = null;
-                    switch (r.operator) {
-                        case "*": v = (v1 * v2); break;
-                        case "+": v = (v1 + v2); break;
-                        case "===": v = (v1 === v2); break;
-                        case "!==": v = (v1 !== v2); break;
-                        case "==": v = (v1 == v2); break;
-                        case "!=": v = (v1 != v2); break;
-                        case "&": v = (v1 & v2); break;
-                        case "|": v = (v1 | v2); break;
-                        case "^": v = (v1 ^ v2); break;
-                        case "<": v = (v1 < v2); break;
-                        case "<=": v = (v1 <= v2); break;
-                        case ">": v = (v1 > v2); break;
-                        case ">=": v = (v1 >= v2); break;
-                        default: null;
-                    }
-                    r = {type: "Literal",
-                         value: v,
-                         raw: String(v)};
-                }*/ break;
+                } break;
             case "UnaryExpression":
                 if (r.argument.type === "Literal") {
                     var v = r.argument.value;
