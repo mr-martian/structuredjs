@@ -20,7 +20,7 @@
 
     if (typeof module !== "undefined" && module.exports) {
         exports = module.exports = {};
-        esprima = require("esprima");
+        esprima = require("./external/esprima.js");
         _ = require("underscore");
     } else {
         exports = this.Structured = {};
@@ -54,128 +54,110 @@
             fn: callback
         };
     }
-    
+
     /*
      * return true if n2 < n1 (according to relatively arbitrary criteria)
      */
     function shouldSwap(n1, n2) {
-        if (n1.type < n2.type) { //Sort by node type if different
-            return false;
-        } else if (n1.type > n2.type) {
-            return true;
-        } else if (n1.type === "Literal") { //Sort by value if they're literals
-            return n1.raw > n2.raw
-        } else { //Otherwise, loop through the properties until a difference is found and sort by that
-            for (var k in n1) {
-                if (n1[k].hasOwnProperty("type") && n1[k] !== n2[k]) {
-                    return shouldSwap(n1[k], n2[k]);
-                }
-            }
+      if (n1.type !== n2.type) { //Sort by node type if different
+        return n1.type > n2.type;
+      } else if (n1.type === "Literal") { //Sort by value if they're literals
+        return n1.raw > n2.raw;
+      } else { //Otherwise, loop through the properties until a difference is found and sort by that
+        for (var k in n1) {
+          if (n1[k].hasOwnProperty("type") && n1[k] !== n2[k]) {
+            return shouldSwap(n1[k], n2[k]);
+          }
         }
+      }
     }
     function standardizeTree(tree) {
-        if (!tree) {return tree;}
-        var r = deepClone(tree);
-        var le = null;
-        var ri = null;
-        var arg = null;
-        for (var key in tree) { //Standardize everything upfront to be sure nothing gets missed.
-            if (tree.hasOwnProperty(key) && _.isObject(tree[key])) {
-                if (_.isArray(tree[key])) {
-                    var ar = [];
-                    for (var i in tree[key]) {
-                        ar = ar.concat(standardizeTree(tree[key][i]));
-                    }
-                    r[key] = ar;
-                } else {
-                    r[key] = standardizeTree(tree[key]);
-                }
-                if (key === "left") { //Just so they don't have to be defined in nearly every case section
-                    le = r[key];
-                } else if (key === "right") {
-                    ri = r[key];
-                } else if (key === "argument") {
-                    arg = r[key];
-                } else {
-                    null;
-                }
+      if (!tree) { return tree; }
+      for (var k in tree) {
+        if (tree.hasOwnProperty(k) && _.isObject(tree[k])) {
+          if (_.isArray(tree[k])) {
+            var ar = [];
+            for (var i = 0; i < tree[k].length; i++) {
+              if (!tree[k][i] ||
+                  !tree[k][i].hasOwnProperty("type") ||
+                  tree[k][i].type !== "EmptyStatement") {
+                ar = ar.concat(standardizeTree(tree[k][i]));
+              }
             }
+            tree[k] = ar;
+          } else {
+            tree[k] = standardizeTree(tree[k]);
+          }
         }
-        switch (tree.type) {
-            case "BinaryExpression":
-                if (_.contains(["*", "+", "===", "!==", "==", "!=", "&", "|", "^"], tree.operator)) {
-                    if (shouldSwap(r.left, r.right)) {
-                        r.left = ri;
-                        r.right = le;
-                    }
-                } else if (tree.operator[0] === ">") {
-                    r.operator = "<" + tree.operator.slice(1);
-                    r.left = ri;
-                    r.right = le;
-                } break;
-            case "UnaryExpression":
-                if (r.argument.type === "Literal") {
-                    var v = r.argument.value;
-                    var change = true;
-                    if (r.operator === "+") {
-                        v = +v;
-                    } else if (r.operator === "-") {
-                        v = -v;
-                    } else { //Are there other unary operators?
-                        change = false; //If not, this line is unnecessary
-                    }
-                    if (change) {
-                        r = {type: "Literal",
-                             value: v,
-                             raw: String(v)};
-                    }
-                } break;
-            case "LogicalExpression":
-                if (_.contains(["&&", "||"], tree.operator) && shouldSwap(tree.left, tree.right)) {
-                    r.left = ri;
-                    r.right = le;
-                } break;
-            case "AssignmentExpression":
-                if (_.contains(["+=", "-=", "*=", "/=", "%=", "<<=", ">>=", ">>>=", "&=", "^=", "|="], tree.operator)) {
-                    r = {type: "AssignmentExpression",
-                         operator: "=",
-                         left: le,
-                         right: {type: "BinaryExpression",
-                                 operator: tree.operator.slice(0,-1),
-                                 left: le,
-                                 right: ri}};
-                } break;
-            case "UpdateExpression":
-                if (_.contains(["++", "--"], tree.operator)) {
-                    r = {type: "AssignmentExpression",
-                         operator: "=",
-                         left: arg,
-                         right: {type: "BinaryExpression",
-                                 operator: tree.operator[0],
-                                 left: arg,
-                                 right: {type: "Literal",
-                                         value: 1,
-                                         raw: "1"}}};
-                 } break;
-            case "VariableDeclaration":
-                if (r.kind === "var") {
-                    r = [r];
-                    for (var i in r[0].declarations) {
-                        if (r[0].declarations[i].type === "VariableDeclarator" &&
-                            r[0].declarations[i].init !== null) {
-                            r.push({type: "ExpressionStatement",
-                                    expression: {type: "AssignmentExpression",
-                                                 operator: "=",
-                                                 left: r[0].declarations[i].id,
-                                                 right: r[0].declarations[i].init}});
-                            r[0].declarations[i].init = null;
-                        }
-                    }
-                } break;
-            default:
-                null;
+      }
+      switch (tree.type) {
+        case "LogicalExpression":
+        case "BinaryExpression":
+          var l = tree.left;
+          if (_.contains(["*", "+", "===", "!==", "==", "!=", "&", "|", "^", "&&", "||"], tree.operator)) {
+            if (shouldSwap(tree.left, tree.right)) {
+              tree.left = tree.right;
+              tree.right = l;
             }
-        return r;
+          } else if (tree.operator[0] === ">") {
+            tree.operator = "<" + tree.operator.slice(1);
+            tree.left = tree.right;
+            tree.right = l;
+          } break;
+        case "AssignmentExpression":
+          if (_.contains(["+=", "-=", "*=", "/=", "%=", "<<=", ">>=", ">>>=", "&=", "^=", "|="], tree.operator)) {
+            tree = {type: "AssignmentExpression",
+                    operator: "=",
+                    left: tree.left,
+                    right: {type: "BinaryExpression",
+                            operator: tree.operator.slice(0,-1),
+                            left: tree.left,
+                            right: tree.right}};
+          } break;
+        case "UpdateExpression":
+          if (_.contains(["++", "--"], tree.operator)) {
+            tree = {type: "AssignmentExpression",
+                    operator: "=",
+                    left: tree.argument,
+                    right: {type: "BinaryExpression",
+                            operator: tree.operator[0],
+                            left: tree.argument,
+                            right: {type: "Literal",
+                                    value: 1,
+                                    raw: "1"}}};
+          } break;
+        case "VariableDeclaration":
+          if (tree.kind === "var") {
+            tree = [tree];
+            for (var i = 0; i < tree[0].declarations.length; i++) {
+              if (tree[0].declarations[i].type === "VariableDeclarator" &&
+                  tree[0].declarations[i].init !== null) {
+                tree.push({type: "ExpressionStatement",
+                           expression: {type: "AssignmentExpression",
+                                        operator: "=",
+                                        left: tree[0].declarations[i].id,
+                                        right: tree[0].declarations[i].init}});
+                tree[0].declarations[i].init = null;
+              }
+            }
+          } break;
+        case "UnaryExpression":
+          if (tree.argument.type === "Literal" && _.isNumber(tree.argument.value)) {
+            /*
+             * Currently, we only fold + and - applied to a number literal.
+             * This is easy to extend, but it means we lose the ability to match
+             * potentially useful expressions like 5 + 5 with a pattern like _ + _.
+             */
+            if (tree.operator === "-") {
+              tree.argument.value = -tree.argument.value;
+              tree = tree.argument;
+            } else if (tree.operator === "+") {
+              tree.argument.value = +tree.argument.value;
+              tree = tree.argument;
+            }
+          }
+      }
+      return tree;
     }
 
     /*
@@ -221,15 +203,15 @@
         options = options || {};
         // Many possible inputs formats are accepted for varCallbacks
         // Constraints can be:
-        // 1. a function (from which we will extract the variables)  
+        // 1. a function (from which we will extract the variables)
         // 2. an objects (which already has separate .fn and .variables properties)
         //
         // It will also accept a list of either of the above (or a mix of the two).
-        // Finally it can accept an object for which the keys are the variables and 
+        // Finally it can accept an object for which the keys are the variables and
         // the values are the callbacks (This option is mainly for historical reasons)
         var varCallbacks = options.varCallbacks || [];
-        // We need to keep a hold of the original varCallbacks object because 
-        // When structured first came out it returned the failure message by 
+        // We need to keep a hold of the original varCallbacks object because
+        // When structured first came out it returned the failure message by
         // changing the .failure property on the varCallbacks object and some uses rely on that.
         // We hope to get rid of this someday.
         // TODO: Change over the code so to have a better API
@@ -401,7 +383,7 @@
     function checkUserVarCallbacks(wVars, varCallbacks) {
         // Clear old failure message if needed
         delete originalVarCallbacks.failure;
-        for (var key in varCallbacks) {
+        for (var key in varCallbacks) {  /* jshint forin:false */
             // Property strings may be "$foo, $bar, $baz" to mimic arrays.
             var varNames = varCallbacks[key].variables;
             var varValues = _.map(varNames, function(varName) {
@@ -502,7 +484,7 @@
      *
      */
     function simplifyTree(tree, wVars) {
-        for (var key in tree) {
+        for (var key in tree) {  /* jshint forin:false */
             if (!tree.hasOwnProperty(key)) {
                 continue; // Inherited property
             }
@@ -571,6 +553,7 @@
             console.error("toFind should never be an array.");
             console.error(toFind);
         }
+        /* jshint -W041, -W116 */
         if (currTree == undefined) {
             if (toFind == undefined) {
                 matchResults._.push(currTree);
@@ -587,7 +570,7 @@
             return false;
         }
         // Check children.
-        for (var key in currTree) {
+        for (var key in currTree) {  /* jshint forin:false */
             if (!currTree.hasOwnProperty(key) || !_.isObject(currTree[key])) {
                 continue; // Skip inherited properties
             }
@@ -752,7 +735,7 @@
             rootToSet = currNode;
         }
 
-        for (var key in toFind) {
+        for (var key in toFind) {  /* jshint forin:false */
             // Ignore inherited properties; also, null properties can be
             // anything and do not have to exist.
             if (!toFind.hasOwnProperty(key) || toFind[key] === null) {
@@ -762,6 +745,7 @@
             var subCurr = currNode[key];
             // Undefined properties can be anything, but they must exist.
             if (subFind === undefined) {
+                /* jshint -W116 */
                 if (subCurr == undefined) {
                     return false;
                 } else {
@@ -925,9 +909,7 @@
     // Store some properties on the addStyling function to maintain the
     // styleMap between runs if desired.
     // Right now just support 7 different variables. Just add more if needed.
-    addStyling.styles = ["one", "two", "three", "four", "five", "six",
-        "seven"
-    ];
+    addStyling.styles = ["one", "two", "three", "four", "five", "six", "seven"];
     addStyling.styleMap = {};
     addStyling.counter = 0;
 
@@ -982,7 +964,7 @@
             return node;
         }
 
-        for (var prop in node) {
+        for (var prop in node) {  /* jshint forin:false */
             if (!node.hasOwnProperty(prop)) {
                 continue;
             }
